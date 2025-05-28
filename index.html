@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>信息差弹幕墙</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Microsoft Yahei", sans-serif;
+            background: #000;
+            touch-action: manipulation;
+        }
+
+        #container {
+            position: fixed;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #background {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* 修改为contain确保完整显示 */
+            background: #000;
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transition: opacity 1s ease-in-out;
+        }
+
+        #background.active {
+            opacity: 1;
+        }
+
+        /* 添加背景遮罩确保文字可读 */
+        .image-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0,0,0,0.3);
+        }
+
+        .danmu {
+            position: absolute;
+            color: #fff;
+            font-size: 18px;
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+            white-space: nowrap;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            padding: 10px;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(5px);
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            z-index: 100;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            min-width: 150px;
+            padding: 12px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 25px;
+            background: #ff4081;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        #colorPicker {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            overflow: hidden;
+        }
+
+        #musicControl {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            cursor: pointer;
+            z-index: 100;
+        }
+
+        #imageControl {
+            position: fixed;
+            top: 60px;
+            right: 10px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            cursor: pointer;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div class="image-wrapper">
+            <img id="background" class="active" src="带背景.png" alt="背景图片">
+            <img id="background" src="1.jpg" alt="1">
+            <img id="background" src="2.jpg" alt="2">
+            <img id="background" src="3.jpg" alt="3">
+            <img id="background" src="联动.jpg" alt="联动">
+        </div>
+        <!-- 弹幕将在此显示 -->
+    </div>
+
+    <div id="musicControl">🎵</div>
+    <div id="imageControl">🖼️</div>
+    
+    <div class="controls">
+        <input type="text" placeholder="输入弹幕..." id="danmuInput">
+        <input type="color" id="colorPicker" value="#ffffff">
+        <button id="sendBtn">发送</button>
+    </div>
+
+    <audio id="bgm" loop>
+        <source src="暮春.mp3" type="audio/mpeg">
+        您的浏览器不支持音频播放
+    </audio>
+
+    <script>
+        // 移动端触摸优化
+        let lastTouch = 0;
+        document.addEventListener('touchstart', e => {
+            const now = Date.now();
+            if (now - lastTouch < 500) e.preventDefault();
+            lastTouch = now;
+        }, { passive: false });
+
+        // 音乐控制
+        const bgm = document.getElementById('bgm');
+        let isPlaying = false;
+        
+        document.getElementById('musicControl').addEventListener('click', () => {
+            if(!isPlaying) {
+                bgm.play().catch(() => alert('点击页面任意处后即可播放音乐'));
+                isPlaying = true;
+            } else {
+                bgm.pause();
+                isPlaying = false;
+            }
+        });
+
+        // 图片轮播控制
+        const backgrounds = document.querySelectorAll('#background');
+        let currentImageIndex = 0;
+        
+        function changeBackground() {
+            backgrounds.forEach((img, index) => {
+                img.classList.toggle('active', index === currentImageIndex);
+            });
+            currentImageIndex = (currentImageIndex + 1) % backgrounds.length;
+        }
+        
+        // 每3秒自动切换图片
+        let imageInterval = setInterval(changeBackground, 3000);
+        
+        document.getElementById('imageControl').addEventListener('click', () => {
+            changeBackground();
+            // 重置定时器
+            clearInterval(imageInterval);
+            imageInterval = setInterval(changeBackground, 3000);
+        });
+
+        // 弹幕系统
+        const container = document.getElementById('container');
+        const danmuInput = document.getElementById('danmuInput');
+        const colorPicker = document.getElementById('colorPicker');
+        
+        // 弹幕存储 - 增加到500条
+        let savedDanmus = JSON.parse(localStorage.getItem('danmus')) || [];
+        
+        function saveDanmu(text, color) {
+            savedDanmus.push({ text, color, timestamp: Date.now() });
+            // 增加到保留最近的500条弹幕
+            if (savedDanmus.length > 500) {
+                savedDanmus = savedDanmus.slice(-500);
+            }
+            localStorage.setItem('danmus', JSON.stringify(savedDanmus));
+        }
+        
+        function createDanmu(text, color) {
+            const danmu = document.createElement('div');
+            danmu.className = 'danmu';
+            danmu.textContent = text;
+            danmu.style.color = color;
+            
+            // 随机垂直位置（保留上下边距）
+            const top = 10 + Math.random() * 80;
+            danmu.style.top = `${top}%`;
+            
+            // 动画设置
+            const animation = danmu.animate([
+                { transform: 'translateX(100vw)' },
+                { transform: 'translateX(-100%)' }
+            ], {
+                duration: 8000 + Math.random() * 4000,
+                easing: 'linear'
+            });
+
+            animation.onfinish = () => danmu.remove();
+            container.appendChild(danmu);
+        }
+
+        // 发送弹幕
+        document.getElementById('sendBtn').addEventListener('click', () => {
+            const text = danmuInput.value.trim();
+            if(text) {
+                const color = colorPicker.value;
+                createDanmu(text, color);
+                saveDanmu(text, color);
+                danmuInput.value = '';
+            }
+        });
+
+        // 回车发送
+        danmuInput.addEventListener('keypress', e => {
+            if(e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('sendBtn').click();
+            }
+        });
+
+        // 加载保存的弹幕
+        function loadSavedDanmus() {
+            savedDanmus.forEach(danmu => {
+                createDanmu(danmu.text, danmu.color);
+            });
+        }
+        
+        // 页面加载时显示保存的弹幕
+        window.addEventListener('load', () => {
+            loadSavedDanmus();
+        });
+    </script>
+</body>
+</html>
